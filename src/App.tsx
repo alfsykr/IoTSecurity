@@ -9,7 +9,10 @@ import {
   Search,
   Edit,
   Trash2,
+  Wifi,
+  Database,
 } from "lucide-react";
+import { registerRFIDUser, simulateRFIDTap, getRFIDUsers } from './services/rfidService';
 
 interface User {
   id: string;
@@ -81,6 +84,8 @@ function App() {
     idNumber: "",
     role: "Student",
   });
+  const [rfidUID, setRfidUID] = useState<string>("");
+  const [firebaseStatus, setFirebaseStatus] = useState<'idle' | 'connecting' | 'success' | 'error'>('idle');
 
   const handleTabChange = (
     newTab: "face" | "rfid" | "fingerprint" | "users"
@@ -105,10 +110,35 @@ function App() {
     }
 
     setLoading(type);
+    
+    if (type === 'rfid') {
+      setFirebaseStatus('connecting');
+    }
 
     // Simulate registration process
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
+    try {
+      // For RFID registration, also save to Firebase
+      if (type === 'rfid') {
+        const uid = await registerRFIDUser({
+          fullName: formData.fullName.trim(),
+          idNumber: formData.idNumber.trim(),
+          role: formData.role,
+          status: 'Active'
+        });
+        setRfidUID(uid);
+        setFirebaseStatus('success');
+        
+        // Simulate RFID tap after registration
+        setTimeout(async () => {
+          await simulateRFIDTap(uid);
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Firebase error:', error);
+      setFirebaseStatus('error');
+    }
     // Check if user already exists by ID number
     const existingUserIndex = users.findIndex(
       (user) => user.idNumber === formData.idNumber.trim()
@@ -139,6 +169,14 @@ function App() {
 
     setLoading(null);
     setFormData({ fullName: "", idNumber: "", role: "Student" });
+    
+    // Reset Firebase status after a delay
+    if (type === 'rfid') {
+      setTimeout(() => {
+        setFirebaseStatus('idle');
+        setRfidUID("");
+      }, 5000);
+    }
   };
 
   const handleDeleteUser = (userId: string) => {
@@ -672,8 +710,25 @@ function App() {
                             <p
                               className={`${currentTheme.scannerText} font-medium`}
                             >
-                              Scanning...
+                              {activeTab === 'rfid' ? 'Registering to Firebase...' : 'Scanning...'}
                             </p>
+                            {activeTab === 'rfid' && (
+                              <div className="mt-4 space-y-2">
+                                <div className="flex items-center justify-center space-x-2">
+                                  <Database className="w-4 h-4 text-green-600" />
+                                  <span className="text-sm text-gray-600">
+                                    {firebaseStatus === 'connecting' && 'Connecting to Firebase...'}
+                                    {firebaseStatus === 'success' && 'Data saved successfully!'}
+                                    {firebaseStatus === 'error' && 'Connection failed'}
+                                  </span>
+                                </div>
+                                {rfidUID && (
+                                  <div className="text-xs text-gray-500">
+                                    RFID UID: {rfidUID}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="text-center">
@@ -685,6 +740,12 @@ function App() {
                             >
                               {getScannerContent()?.text}
                             </p>
+                            {activeTab === 'rfid' && (
+                              <div className="mt-4 flex items-center justify-center space-x-2 text-sm text-gray-500">
+                                <Wifi className="w-4 h-4" />
+                                <span>Connected to Firebase</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -699,9 +760,26 @@ function App() {
                         className={`w-full mt-6 ${currentTheme.button} disabled:opacity-50 text-white py-4 px-6 rounded-lg font-semibold transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] disabled:scale-100 disabled:cursor-not-allowed hover:shadow-lg`}
                       >
                         {loading === activeTab
-                          ? "Registering..."
+                          ? (activeTab === 'rfid' ? "Saving to Firebase..." : "Registering...")
                           : `Register ${getTabTitle()}`}
                       </button>
+                      
+                      {activeTab === 'rfid' && firebaseStatus === 'success' && (
+                        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center space-x-2 text-green-800">
+                            <Database className="w-5 h-5" />
+                            <span className="font-medium">Firebase Integration Active</span>
+                          </div>
+                          <p className="text-sm text-green-700 mt-1">
+                            RFID data has been saved to Firebase. Access logs will be automatically created when the card is tapped.
+                          </p>
+                          {rfidUID && (
+                            <div className="mt-2 text-xs text-green-600 font-mono">
+                              Path: akses/rfid_users/{rfidUID}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
